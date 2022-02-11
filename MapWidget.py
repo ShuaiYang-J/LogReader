@@ -22,6 +22,39 @@ from matplotlib.collections import LineCollection
 from matplotlib.patches import Circle
 from matplotlib.collections import PatchCollection
 
+# 增加滑动条界面
+class Slider(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super(Slider, self).__init__(parent)
+        self.setWindowTitle("请选择时间")
+        self.setWindowIcon(QtGui.QIcon('rbk.ico'))
+        self.resize(300, 100)
+
+        layout = QtWidgets.QVBoxLayout()
+        self.label = QtWidgets.QLabel("里程计数据外推时间为：")
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(self.label)
+        self.setLayout(layout)
+
+        # 水平方向
+        self.s1 = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        # 设置最小值
+        self.s1.setMinimum(0)
+        # 设置最大值
+        self.s1.setMaximum(60)
+        # 设置步长
+        self.s1.setSingleStep(1)
+        # 设置当前值
+        self.s1.setValue(0)
+        layout.addWidget(self.s1)
+        self.s1.valueChanged.connect(self.value_changed)
+
+    def value_changed(self):
+        # print("current slider value=%s" % self.s1.value())
+        size = self.s1.value()
+        self.label.setText('里程计数据外推时间为：' +str(size)+' '+'s')
+        return size
+# 
 def GetGlobalPos(p2b, b2g):
     x = p2b[0] * np.cos(b2g[2]) - p2b[1] * np.sin(b2g[2])
     y = p2b[0] * np.sin(b2g[2]) + p2b[1] * np.cos(b2g[2])
@@ -549,9 +582,18 @@ class MapWidget(QtWidgets.QWidget):
         self.read_model.signal.connect(self.readModelFinished)
         self.read_cp = Readcp()
         self.read_cp.signal.connect(self.readCPFinished)
+        # 增加部分
+        self.trajectory_True = lines.Line2D([], [], linestyle='', marker='*', markersize=2.0, color='y')
+        self.trajectory_True.set_zorder(20)
+        self.trajectory_GoodPos = lines.Line2D([],[], linestyle = '', marker = 'o', markersize = 2.0, color='red')
+        self.trajectory_GoodPos.set_zorder(20)
+        self.trajectory_RTK = lines.Line2D([], [], linestyle='', marker='o', markersize=2.0, color='blue')
+        self.trajectory_RTK.set_zorder(20)
+
         self.setupUI()
         self.pointLists = dict()
         self.lineLists = dict()
+
 
     def setupUI(self):
         self.static_canvas = FigureCanvas(Figure(figsize=(5,5)))
@@ -577,7 +619,11 @@ class MapWidget(QtWidgets.QWidget):
         self.ax.add_line(self.depthCamera_obs_points)
         self.ax.add_line(self.particle_points)
         self.ax.add_line(self.trajectory)
+        self.ax.add_line(self.trajectory_True)
         self.ax.add_line(self.trajectory_next)
+        self.ax.add_line(self.trajectory_GoodPos)
+        self.ax.add_line(self.trajectory_RTK)
+
         self.ruler = RulerShape()
         self.ruler.add_ruler(self.ax)
         MyToolBar.home = self.toolbarHome
@@ -658,6 +704,16 @@ class MapWidget(QtWidgets.QWidget):
         self.check_3dObs.setFocusPolicy(QtCore.Qt.NoFocus)
         self.check_traj = QtWidgets.QCheckBox('TRAJ',self)
         self.check_traj.setFocusPolicy(QtCore.Qt.NoFocus)
+        # 
+        self.check_odomTraj = QtWidgets.QCheckBox('Odom_TRAJ',self)
+        self.ischecke_odomTraj=False
+        self.ischecke_odomTraj_count = 0
+        self.check_odomTraj_time = None
+        self.odomTraj_x = []
+        self.odomTraj_y = []
+        self.odomTraj_theta = []  
+        #   
+        self.check_odomTraj.setFocusPolicy(QtCore.Qt.NoFocus)
         self.hbox.addWidget(self.check_all)
         self.hbox.addWidget(self.check_map)
         self.hbox.addWidget(self.check_robot)
@@ -665,6 +721,7 @@ class MapWidget(QtWidgets.QWidget):
         self.hbox.addWidget(self.check_3dHole)
         self.hbox.addWidget(self.check_3dObs)
         self.hbox.addWidget(self.check_traj)
+        self.hbox.addWidget(self.check_odomTraj)
         self.check_all.stateChanged.connect(self.changeCheckBoxAll)
         self.check_map.stateChanged.connect(self.changeCheckBox)
         self.check_robot.stateChanged.connect(self.changeCheckBox)
@@ -672,10 +729,13 @@ class MapWidget(QtWidgets.QWidget):
         self.check_3dHole.stateChanged.connect(self.changeCheckBox)
         self.check_3dObs.stateChanged.connect(self.changeCheckBox)
         self.check_traj.stateChanged.connect(self.changeCheckBox)
+        self.check_odomTraj.stateChanged.connect(self.changeCheckBox)
         self.check_lasers = dict()
         self.hbox.setAlignment(QtCore.Qt.AlignLeft)
         self.fig_layout.addLayout(self.hbox)
         self.check_all.setChecked(True)
+        self.Slider =Slider()
+        self.Slider_value=0
         
     def changeAutoMap(self):
         flag =  not self.autoMap.isChecked()
@@ -789,6 +849,7 @@ class MapWidget(QtWidgets.QWidget):
             self.check_3dHole.setChecked(True)
             self.check_3dObs.setChecked(True)
             self.check_traj.setChecked(True)
+            self.check_odomTraj.setChecked(False)
             for k in self.check_lasers.keys():
                 self.check_lasers[k].setChecked(True)
         elif self.check_all.checkState() == QtCore.Qt.Unchecked:
@@ -798,6 +859,7 @@ class MapWidget(QtWidgets.QWidget):
             self.check_3dHole.setChecked(False)
             self.check_3dObs.setChecked(False)
             self.check_traj.setChecked(False)
+            self.check_odomTraj.setChecked(False)
             for k in self.check_lasers.keys():
                 self.check_lasers[k].setChecked(False)
 
@@ -842,6 +904,23 @@ class MapWidget(QtWidgets.QWidget):
         elif cur_check is self.check_traj:
             self.trajectory.set_visible(cur_check.isChecked())
             self.trajectory_next.set_visible(cur_check.isChecked())
+            self.trajectory_GoodPos.set_visible(False)
+            self.trajectory_RTK.set_visible(False)
+        elif cur_check is self.check_odomTraj:
+            if self.ischecke_odomTraj==True:
+                self.ischecke_odomTraj = False
+                self.ischecke_odomTraj_count = 1
+                self.odomTraj_x = []
+                self.odomTraj_y = []
+                self.trajectory_True.set_visible(False)
+                self.Slider.close()
+            else:
+                self.ischecke_odomTraj = True
+                self.ischecke_odomTraj_count = 0
+                self.check_odomTraj_time = None
+                self.Slider.show()
+                self.trajectory_True.set_visible(cur_check.isChecked())
+
         else:
             for k in self.check_lasers.keys():
                 if cur_check is self.check_lasers[k]:
@@ -1043,6 +1122,9 @@ class MapWidget(QtWidgets.QWidget):
                 self.check_3dObs.setFocusPolicy(QtCore.Qt.NoFocus)
                 self.check_traj = QtWidgets.QCheckBox('TRAJ',self)
                 self.check_traj.setFocusPolicy(QtCore.Qt.NoFocus)
+                self.check_odomTraj = QtWidgets.QCheckBox('Odom_TRAJ', self)
+                self.check_odomTraj.setFocusPolicy(QtCore.Qt.NoFocus)
+
                 self.hbox.addWidget(self.check_all)
                 self.hbox.addWidget(self.check_map)
                 self.hbox.addWidget(self.check_robot)
@@ -1050,6 +1132,8 @@ class MapWidget(QtWidgets.QWidget):
                 self.hbox.addWidget(self.check_3dHole)
                 self.hbox.addWidget(self.check_3dObs)
                 self.hbox.addWidget(self.check_traj)
+                self.hbox.addWidget(self.check_odomTraj)
+
                 self.check_all.stateChanged.connect(self.changeCheckBoxAll)
                 self.check_map.stateChanged.connect(self.changeCheckBox)
                 self.check_robot.stateChanged.connect(self.changeCheckBox)
@@ -1057,6 +1141,8 @@ class MapWidget(QtWidgets.QWidget):
                 self.check_3dHole.stateChanged.connect(self.changeCheckBox)
                 self.check_3dObs.stateChanged.connect(self.changeCheckBox)
                 self.check_traj.stateChanged.connect(self.changeCheckBox)
+                self.check_odomTraj.stateChanged.connect(self.changeCheckBox)
+
                 self.check_lasers = dict()
                 for k in self.read_model.laser.keys():
                     self.add_laser_check(k)
@@ -1157,7 +1243,15 @@ class MapWidget(QtWidgets.QWidget):
                         self.laser_data_points.set_paths(patches)
                         self.laser_data_points.set_color(self.laser_point_color)
                         self.static_canvas.figure.canvas.draw()
-
+    def readtrajectory_True(self, x, y):
+        self.trajectory_True.set_xdata(x)
+        self.trajectory_True.set_ydata(y)
+    def readtrajectoryGoodPos(self, x, y):
+        self.trajectory_GoodPos.set_xdata(x)
+        self.trajectory_GoodPos.set_ydata(y)
+    def readtrajectoryRTK(self, x, y):
+        self.trajectory_RTK.set_xdata(x)
+        self.trajectory_RTK.set_ydata(y)
     def readtrajectory(self, x, y, xn, yn, x0, y0, r0):
         self.trajectory.set_xdata(x)
         self.trajectory.set_ydata(y)
@@ -1179,8 +1273,13 @@ class MapWidget(QtWidgets.QWidget):
                 self.ax.set_ylim(ymin, ymax)
 
     def updateRobotLaser(self, laser_org_data, laser_rssi, laser_index, robot_pos, robot_loc_pos, laser_info, loc_info, obs_pos, obs_info, depthcamera_pos, particle_pos):
-        self.timestamp_lable.setText('当前激光时刻定位（实框）: '+ laser_info)
-        self.logt_lable.setText('当前时刻定位(虚框): '+ loc_info)
+        if self.ischecke_odomTraj == True:
+            self.timestamp_lable.setText('当前里程计估计定位（实框）: '+ laser_info)
+            self.logt_lable.setText('当前时刻定位(虚框): '+ loc_info)
+        else:
+            self.timestamp_lable.setText('当前激光时刻定位（实框）: '+ laser_info)
+            self.logt_lable.setText('当前时刻定位(虚框): '+ loc_info)
+
         if obs_info != '':
             self.obs_lable.setText('障碍物信息: ' + obs_info)
             self.obs_lable.show()

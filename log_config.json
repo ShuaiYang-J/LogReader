@@ -1062,5 +1062,36 @@
       {"index":7, "name":"closest_target", "type":"str"},
       {"index":8, "name":"unfinished_path_name_size", "type":"int"}
     ]
+  },
+  "GNSS": {
+    "type": "GNSS",
+    "content": [
+      { "index": 0, "name": "timestamp", "type": "int64", "description": "gnss时间戳", "unit":""},
+      { "index": 1, "name": "status", "type": "int32", "description": "GNSS状态", "unit":""},
+      { "index": 2, "name": "x", "type": "double", "description": "GNSS位置x", "unit":"m"},
+      { "index": 3, "name": "y", "type": "double", "description": "GNSS位置y", "unit":"m"},
+      { "index": 4, "name": "z", "type": "double", "description": "GNSS位置z", "unit":"m"},
+      { "index": 5, "name": "acc", "type": "double", "description": "GNSS定位精度", "unit":""}
+    ]
+  },
+  "3D_Localization": {
+    "type": "3D_Localization",
+    "content": [
+      { "index": 0, "name": "x", "type": "double", "description": "3D定位x", "unit":"m"},
+      { "index": 1, "name": "y", "type": "double", "description": "3D定位y", "unit":"m"},
+      { "index": 2, "name": "yaw", "type": "double", "description": "3D定位角度", "unit":"degree"},
+	  { "index": 3, "name": "timestamp", "type": "int64", "description": "定位时间戳", "unit":""},
+      { "index": 4, "name": "vel_rotate", "type": "double", "description": "当前角速度", "unit":"degree/s"}
+    ]
+  },
+  "RTK_Localization": {
+    "type": "RTK_Localization",
+    "content": [
+      { "index": 0, "name": "x", "type": "double", "description": "RTK定位x", "unit":"m"},
+      { "index": 1, "name": "y", "type": "double", "description": "RTK定位y", "unit":"m"},
+      { "index": 2, "name": "yaw", "type": "double", "description": "RTK定位角度", "unit":"degree"},
+	  { "index": 3, "name": "vel_x", "type": "double", "description": "x速度", "unit":"m/s" },
+	  { "index": 4, "name": "timestamp", "type": "int64", "description": "RTK定位时间戳", "unit":""}
+    ]
   }
 }

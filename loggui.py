@@ -45,6 +45,44 @@ class XYSelection:
         vbox.addLayout(x_form)
         self.groupBox.setLayout(vbox)
 
+#增加一个选项按钮
+class ChooseDrawData(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.DrawGoodPos=None
+        self.DrawRTK = None
+
+        self.setGeometry(200, 200, 400, 400)
+        self.setWindowTitle('选择绘制目标：')
+        self.setWindowIcon(QtGui.QIcon('rbk.ico'))
+
+        self.btn1 = QtWidgets.QPushButton(self)
+        self.btn1.setText('绘制天线坐标轨迹')
+        self.btn1.clicked.connect(self.show1)
+        self.btn2 = QtWidgets.QPushButton(self)
+        self.btn2.setText('绘制RTK轨迹')
+        self.btn2.clicked.connect(self.show2)
+        self.btn3 = QtWidgets.QPushButton(self)
+        self.btn3.setText('绘制xxx轨迹')
+        self.btn3.clicked.connect(self.show3)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.btn1)
+        layout.addWidget(self.btn2)
+        layout.addWidget(self.btn3)
+        self.setLayout(layout)
+
+    def show1(self):
+        reply = QtWidgets.QMessageBox.information(self,"请确认：","是否绘制？",QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.Yes)
+        self.DrawGoodPos=reply
+    def show2(self):
+        reply = QtWidgets.QMessageBox.information(self,"请确认：","是否绘制？",QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.Yes)
+        self.DrawRTK =reply
+    def show3(self):
+        reply = QtWidgets.QMessageBox.information(self,"请确认：","是否绘制？",QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.Yes)
+        # print(3)
+#
 
 class DataSelection(QtWidgets.QWidget):
     getdata = pyqtSignal('PyQt_PyObject')
@@ -88,6 +126,8 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.mid_line_t = None #中间蓝线对应的时间
         self.mid_line_select = False #中间蓝线是否被选择上
         self.mid_select_lines = []
+        self.map_select_lines_Start = []
+        self.map_select_lines_End = []
         self.mouse_pressed = False
         self.map_widget = None
         self.log_widget = None
@@ -95,6 +135,8 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.motor_view_widget = None
         self.dataViews = [] #显示特定数据框
         self.in_close = False
+        self.SetTimeStart_time=None
+        self.SetTimeEnd_time = None
         self.setupUI()
 
     def setupUI(self):
@@ -268,6 +310,9 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.check_tstart = QtWidgets.QCheckBox('TASK START',self)
         self.check_tfinish = QtWidgets.QCheckBox('TASK FINISHED',self)
         self.check_service = QtWidgets.QCheckBox('SERVICE',self)
+        self.check_ChooseDraw = QtWidgets.QCheckBox('绘制轨迹', self)
+        self.check_ChooseDraw_ischeck=False
+        self.chooseDrawData=ChooseDrawData()
         self.hbox.addWidget(self.check_all)
         self.hbox.addWidget(self.check_fatal)
         self.hbox.addWidget(self.check_err)
@@ -276,6 +321,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.hbox.addWidget(self.check_tstart)
         self.hbox.addWidget(self.check_tfinish)
         self.hbox.addWidget(self.check_service)
+        self.hbox.addWidget(self.check_ChooseDraw)
         self.hbox.setAlignment(QtCore.Qt.AlignLeft)
         self.layout.addLayout(self.hbox)
         self.check_fatal.stateChanged.connect(self.changeCheckBox)
@@ -285,6 +331,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.check_tstart.stateChanged.connect(self.changeCheckBox)
         self.check_tfinish.stateChanged.connect(self.changeCheckBox)
         self.check_service.stateChanged.connect(self.changeCheckBox)
+        self.check_ChooseDraw.stateChanged.connect(self.changeCheckBox)
         self.check_all.stateChanged.connect(self.changeCheckBoxAll)
         self.check_all.setChecked(True)
 
@@ -384,6 +431,30 @@ class ApplicationWindow(QtWidgets.QMainWindow):
             content = '\n'.join(contents)
         return content
 
+    def RoationOdom(self,x,y,r0):
+
+        xnext,ynext=np.array(x),np.array(y)
+        xnext_Roation = xnext * np.cos(r0) - ynext * np.sin(r0)
+        ynext_Roation = xnext * np.sin(r0) + ynext * np.cos(r0)
+        return xnext_Roation,ynext_Roation
+
+    def UsingTime_ChooseData(self,Start_time,End_time):
+        GNSS_idx_Start,GNSS_idx_End,RTK_idx_Start,RTK_idx_End=None,None,None,None
+
+        if self.chooseDrawData.DrawGoodPos == 16384:
+            GNSS_ts_Start = np.array(self.read_thread.content['GNSS']['t'])
+            GNSS_idx_Start = (np.abs(GNSS_ts_Start - Start_time)).argmin()
+            GNSS_ts_End = np.array(self.read_thread.content['GNSS']['t'])
+            GNSS_idx_End = (np.abs(GNSS_ts_End - End_time)).argmin()
+
+        if self.chooseDrawData.DrawRTK == 16384:
+            RTK_ts_Start = np.array(self.read_thread.content['RTK_Localization']['t'])
+            RTK_idx_Start = (np.abs(RTK_ts_Start - Start_time)).argmin()
+            RTK_ts_End = np.array(self.read_thread.content['RTK_Localization']['t'])
+            RTK_idx_End = (np.abs(RTK_ts_End - End_time)).argmin()
+
+        return GNSS_idx_Start,GNSS_idx_End,RTK_idx_Start,RTK_idx_End
+
     def updateMap(self):
         if self.mid_line_t is None:
             return
@@ -395,13 +466,93 @@ class ApplicationWindow(QtWidgets.QMainWindow):
                 if loc_idx < 0:
                     loc_ts = np.array(self.read_thread.content['LocationEachFrame']['t'])
                     loc_idx = (np.abs(loc_ts - self.mid_line_t)).argmin()
+                    loc_ts_odo = np.array(self.read_thread.content['Odometer']['t'])
+                    loc_idx_odo = (np.abs(loc_ts_odo - self.mid_line_t)).argmin()
                 if loc_idx < 1:
                     loc_idx = 1
+                    loc_idx_odo = 1
+                if loc_idx > 1:
+                    loc_ts_odo = np.array(self.read_thread.content['Odometer']['t'])
+                    loc_idx_odo = (np.abs(loc_ts_odo - self.mid_line_t)).argmin()
                 if self.map_widget:
-                    self.map_widget.readtrajectory(self.read_thread.content['LocationEachFrame']['x'][0:loc_idx], self.read_thread.content['LocationEachFrame']['y'][0:loc_idx],
-                                                self.read_thread.content['LocationEachFrame']['x'][loc_idx::], self.read_thread.content['LocationEachFrame']['y'][loc_idx::],
-                                                self.read_thread.content['LocationEachFrame']['x'][loc_idx], self.read_thread.content['LocationEachFrame']['y'][loc_idx], 
-                                                np.deg2rad(self.read_thread.content['LocationEachFrame']['theta'][loc_idx]))
+                    # self.map_widget.readtrajectory(self.read_thread.content['LocationEachFrame']['x'][0:loc_idx], self.read_thread.content['LocationEachFrame']['y'][0:loc_idx],
+                    #                             self.read_thread.content['LocationEachFrame']['x'][loc_idx::], self.read_thread.content['LocationEachFrame']['y'][loc_idx::],
+                    #                             self.read_thread.content['LocationEachFrame']['x'][loc_idx], self.read_thread.content['LocationEachFrame']['y'][loc_idx], 
+                    #                             np.deg2rad(self.read_thread.content['LocationEachFrame']['theta'][loc_idx]))
+                    # 规定时间范围内
+                    # self.SetTimeEnd_time
+                    # GNSS_idx_Start, GNSS_idx_End, RTK_idx_Start, RTK_idx_End = self.UsingTime_ChooseData(
+                    #     self.SetTimeStart_time, self.SetTimeEnd_time)
+                    if self.SetTimeEnd_time != None and self.SetTimeStart_time != None:
+                        if self.SetTimeStart_time < self.SetTimeEnd_time:
+
+                            GNSS_idx_Start,GNSS_idx_End,RTK_idx_Start,RTK_idx_End=self.UsingTime_ChooseData(self.SetTimeStart_time, self.SetTimeEnd_time)
+                            if self.chooseDrawData.DrawGoodPos == 16384:
+                                self.map_widget.trajectory_GoodPos.set_visible(True)
+                                self.map_widget.readtrajectoryGoodPos(self.read_thread.content['GNSS']['x'][GNSS_idx_Start:GNSS_idx_End+1],
+                                                                      self.read_thread.content['GNSS']['y'][GNSS_idx_Start:GNSS_idx_End+1])
+                            else:
+                                self.map_widget.trajectory_GoodPos.set_visible(False)
+                            # 绘制不同轨迹 Ex2 RTK
+                            if self.chooseDrawData.DrawRTK == 16384:
+                                self.map_widget.trajectory_RTK.set_visible(True)
+                                self.map_widget.readtrajectoryRTK(self.read_thread.content['RTK_Localization']['x'][RTK_idx_Start:RTK_idx_End+1],
+                                                                      self.read_thread.content['RTK_Localization']['y'][RTK_idx_Start:RTK_idx_End+1])
+                            else:
+                                self.map_widget.trajectory_RTK.set_visible(False)
+                    #
+                    else:
+                        # 绘制不同轨迹 Ex1 GoodPos
+                        if self.chooseDrawData.DrawGoodPos == 16384:
+                            self.map_widget.trajectory_GoodPos.set_visible(True)
+                            self.map_widget.readtrajectoryGoodPos(self.read_thread.content['GNSS']['x'],
+                                                                  self.read_thread.content['GNSS']['y'])
+                        else:
+                            self.map_widget.trajectory_GoodPos.set_visible(False)
+                        # 绘制不同轨迹 Ex2 RTK
+                        if self.chooseDrawData.DrawRTK == 16384:
+                            self.map_widget.trajectory_RTK.set_visible(True)
+                            self.map_widget.readtrajectoryRTK(self.read_thread.content['RTK_Localization']['x'],
+                                                                  self.read_thread.content['RTK_Localization']['y'])
+                        else:
+                            self.map_widget.trajectory_RTK.set_visible(False)
+
+                    #Test 6
+                    # self.map_widget.check_odomTraj.isChecked()
+                    self.map_widget.readtrajectory(self.read_thread.content['LocationEachFrame']['x'][0:loc_idx],
+                                                   self.read_thread.content['LocationEachFrame']['y'][0:loc_idx],
+                                                   self.read_thread.content['LocationEachFrame']['x'][loc_idx::],
+                                                   self.read_thread.content['LocationEachFrame']['y'][loc_idx::],
+                                                   self.read_thread.content['LocationEachFrame']['x'][loc_idx],
+                                                   self.read_thread.content['LocationEachFrame']['y'][loc_idx], #画出行驶路线的箭头
+                                                   np.deg2rad(
+                                                       self.read_thread.content['LocationEachFrame']['theta'][loc_idx]))
+
+                    if (self.map_widget.ischecke_odomTraj == True and self.map_widget.ischecke_odomTraj_count==0):
+                        Framex = self.read_thread.content['LocationEachFrame']['x'][loc_idx]
+                        Framey = self.read_thread.content['LocationEachFrame']['y'][loc_idx]
+                        Relativex = self.read_thread.content['Odometer']['x'][loc_idx_odo]
+                        Relativey = self.read_thread.content['Odometer']['y'][loc_idx_odo]
+                        xnext, ynext = self.RoationOdom(self.read_thread.content['Odometer']['x'],
+                                                        self.read_thread.content['Odometer']['y'],
+                                                        (-np.deg2rad(self.read_thread.content['Odometer']['theta'][
+                                                                         loc_idx_odo] + 180) + np.deg2rad(
+                                                            self.read_thread.content['LocationEachFrame']['theta'][
+                                                                loc_idx] + 180)))
+                        Diffx = self.read_thread.content['LocationEachFrame']['x'][loc_idx] - xnext[loc_idx_odo]
+                        Diffy = self.read_thread.content['LocationEachFrame']['y'][loc_idx] - ynext[loc_idx_odo]
+
+                        self.map_widget.odomTraj_theta=self.read_thread.content['LocationEachFrame']['theta'][loc_idx]+ \
+                                                       (np.array(self.read_thread.content['Odometer']['theta'])-self.read_thread.content['Odometer']['theta'][loc_idx_odo])
+                        #
+                        self.map_widget.odomTraj_theta[self.map_widget.odomTraj_theta >180]=-(180-(self.map_widget.odomTraj_theta[self.map_widget.odomTraj_theta >180]-180))
+                        self.map_widget.odomTraj_theta[self.map_widget.odomTraj_theta <-180] =(180-((-self.map_widget.odomTraj_theta[self.map_widget.odomTraj_theta <-180])-180))
+
+                        self.map_widget.odomTraj_x= xnext + Diffx
+                        self.map_widget.odomTraj_y = ynext + Diffy
+                        self.map_widget.ischecke_odomTraj_count = 2
+                        self.map_widget.check_odomTraj_time = self.mid_line_t
+
         else :
             if 'Location' in self.read_thread.content:
                 loc_ts = np.array(self.read_thread.content['Location']['t'])
@@ -510,9 +661,56 @@ class ApplicationWindow(QtWidgets.QMainWindow):
                     pos_ts = np.array(self.read_thread.content['LocationEachFrame']['timestamp'][loc_min_ind:loc_max_ind])
                     pos_idx = (np.abs(pos_ts - ts)).argmin()
                     pos_idx = loc_min_ind + pos_idx
-                    robot_pos = [self.read_thread.content['LocationEachFrame']['x'][pos_idx],
-                                self.read_thread.content['LocationEachFrame']['y'][pos_idx],
-                                np.deg2rad(self.read_thread.content['LocationEachFrame']['theta'][pos_idx])]
+
+                    # Odom区间寻找最小值
+                    loc_min_ind_odo = loc_idx_odo - 100
+                    loc_max_ind_odo = loc_idx_odo + 100
+                    if loc_min_ind_odo < 0:
+                        loc_min_ind_odo = 0
+                    if loc_max_ind_odo >= len(self.read_thread.content['Odometer']['timestamp']):
+                        loc_max_ind_odo = len(self.read_thread.content['Odometer']['timestamp']) - 1
+                        if loc_max_ind_odo < 0:
+                            loc_max_ind_odo = 0
+                    pos_ts_odo = np.array(self.read_thread.content['Odometer']['timestamp'][loc_min_ind_odo:loc_max_ind_odo])
+                    pos_idx_odo = (np.abs(pos_ts_odo - ts)).argmin()
+                    pos_idx_odo = loc_min_ind_odo + pos_idx_odo
+                    #
+                    if self.map_widget:
+                        if (self.map_widget.ischecke_odomTraj == True and self.map_widget.ischecke_odomTraj_count == 2 and self.map_widget.Slider.value_changed() > 0):
+                            if (self.map_widget.check_odomTraj_time < self.mid_line_t):
+                                robot_pos = \
+                                    [self.map_widget.odomTraj_x[pos_idx_odo],
+                                     self.map_widget.odomTraj_y[pos_idx_odo],
+                                     np.deg2rad(self.map_widget.odomTraj_theta[pos_idx_odo])]
+                                # self.map_widget.odomTraj_theta
+
+                                # 传递选择的外推时间
+                                self.map_widget.Slider_value = self.map_widget.Slider.value_changed()
+                                NowOdomNeedtime=self.map_widget.check_odomTraj_time+timedelta(seconds=self.map_widget.Slider_value)
+
+                                # print(self.map_widget.Slider_value)
+                                loc_ts_odo_need = np.array(self.read_thread.content['Odometer']['t'])
+                                loc_idx_odo_need = (np.abs(loc_ts_odo_need - NowOdomNeedtime)).argmin()
+
+                                self.map_widget.readtrajectory_True(self.map_widget.odomTraj_x[pos_idx_odo:loc_idx_odo_need],
+                                                                    self.map_widget.odomTraj_y[pos_idx_odo:loc_idx_odo_need])
+
+                            else:
+                                robot_pos = [self.read_thread.content['LocationEachFrame']['x'][pos_idx],
+                                            self.read_thread.content['LocationEachFrame']['y'][pos_idx],
+                                            np.deg2rad(self.read_thread.content['LocationEachFrame']['theta'][pos_idx])]
+                        else:
+                            robot_pos = [self.read_thread.content['LocationEachFrame']['x'][pos_idx],
+                                        self.read_thread.content['LocationEachFrame']['y'][pos_idx],
+                                        np.deg2rad(self.read_thread.content['LocationEachFrame']['theta'][pos_idx])]
+                    else:
+                        robot_pos = [self.read_thread.content['LocationEachFrame']['x'][pos_idx],
+                                     self.read_thread.content['LocationEachFrame']['y'][pos_idx],
+                                     np.deg2rad(self.read_thread.content['LocationEachFrame']['theta'][pos_idx])]
+
+                    # robot_pos = [self.read_thread.content['LocationEachFrame']['x'][pos_idx],
+                    #             self.read_thread.content['LocationEachFrame']['y'][pos_idx],
+                    #             np.deg2rad(self.read_thread.content['LocationEachFrame']['theta'][pos_idx])]
                     laser_info = (str(self.read_thread.content['LocationEachFrame']['t'][pos_idx]) 
                                         + ' , ' + str((int)(self.read_thread.content['LocationEachFrame']['timestamp'][pos_idx]))
                                         + ' , ' + str(self.read_thread.content['LocationEachFrame']['x'][pos_idx])
@@ -639,6 +837,10 @@ class ApplicationWindow(QtWidgets.QMainWindow):
                 elif event.button == 3:
                     if not self.toolBar.isActive():
                         self.popMenu = QtWidgets.QMenu(self)
+                        # 添加时间范围选择
+                        self.popMenu.addAction('&Set Time Start', lambda: self.SetTimeStart(event.xdata))
+                        self.popMenu.addAction('&Set Time End', lambda: self.SetTimeEnd(event.xdata))
+                        #
                         self.popMenu.addAction('&Save Data',lambda:self.savePlotData(event.inaxes))
                         self.popMenu.addAction('&Move Here',lambda:self.moveHere(event.xdata))
                         self.popMenu.addAction('&reset Data', lambda:self.resetData(event.inaxes))
@@ -673,6 +875,28 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.mouse_pressed = False
         self.mid_line_select = False
 
+    # 指定时间范围
+    def SetTimeStart(self, mtime):
+        mouse_time = mtime
+        if type(mouse_time) is not datetime:
+            mouse_time = mtime * 86400 - 62135712000
+            mouse_time = datetime.fromtimestamp(mouse_time)
+        self.resetMidLineProperty(mouse_time)
+        self.SetTimeStart_time=mouse_time
+        print(self.SetTimeStart_time)
+        self.updateMap()
+
+
+
+    def SetTimeEnd(self, mtime):
+        mouse_time = mtime
+        if type(mouse_time) is not datetime:
+            mouse_time = mtime * 86400 - 62135712000
+            mouse_time = datetime.fromtimestamp(mouse_time)
+        self.resetMidLineProperty(mouse_time)
+        self.SetTimeEnd_time=mouse_time
+        self.updateMap()
+    #
     def moveHere(self, mtime):
         mouse_time = mtime
         if type(mouse_time) is not datetime:
@@ -680,6 +904,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
             mouse_time = datetime.fromtimestamp(mouse_time)
         self.resetMidLineProperty(mouse_time)
         self.updateMap()
+
 
     def savePlotData(self, cur_ax):
         indx = self.axs.tolist().index(cur_ax)
@@ -1267,7 +1492,14 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         else:
             self.check_all.setTristate(False)
             self.check_all.setCheckState(QtCore.Qt.Unchecked)
-
+        if self.check_ChooseDraw.isChecked():
+            self.check_ChooseDraw_ischeck = True
+            self.chooseDrawData.show()
+        else:
+            self.chooseDrawData.close()
+            self.check_ChooseDraw_ischeck = False
+        self.chooseDrawData.DrawGoodPos=None
+        self.chooseDrawData.DrawRTK = None
         cur_check = self.sender()
         if cur_check is self.check_fatal:
             self.updateCheckInfoLine('fatal')
@@ -1305,8 +1537,10 @@ class ApplicationWindow(QtWidgets.QMainWindow):
     def openMap(self, checked):
         if checked:
             self.map_widget.show()
+            self.updateMidLine()
         else:
             self.map_widget.hide()
+
         self.static_canvas.figure.canvas.draw()
     
     def viewMotorErr(self, checked):
@@ -1469,7 +1703,11 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         if len(self.mid_select_lines) < 1:
             for ax in self.axs:
                 wl = ax.axvline(tmid, color = 'c', linewidth = 10, alpha = 0.5, picker = 10)
-                self.mid_select_lines.append(wl) 
+                self.mid_select_lines.append(wl)
+                wl_Start = ax.axvline(0, color='r', linewidth=5, alpha=0.5, picker=10)
+                self.map_select_lines_Start.append(wl_Start)
+                wl_End = ax.axvline(0, color='y', linewidth=5, alpha=0.5, picker=10)
+                self.map_select_lines_End.append(wl_End)
                 mouse_time = tmid * 86400 - 62135712000
                 if mouse_time > 1e6:
                     self.mid_line_t = datetime.fromtimestamp(mouse_time)
@@ -1487,6 +1725,10 @@ class ApplicationWindow(QtWidgets.QMainWindow):
             if cur_t >= xmin and cur_t <= xmax:
                 for ln in self.mid_select_lines:
                     ln.set_visible(True)
+                for ln in self.map_select_lines_Start:
+                    ln.set_visible(True)
+                for ln in self.map_select_lines_End:
+                    ln.set_visible(True)
             else:
                 for ln in self.mid_select_lines:
                     ln.set_visible(True)
@@ -1499,11 +1741,22 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         for ln in self.mid_select_lines:
             if self.mid_line_t is not None:
                 ln.set_xdata([self.mid_line_t,self.mid_line_t])
+        if self.SetTimeEnd_time != None and self.SetTimeStart_time != None:
+            if self.SetTimeStart_time < self.SetTimeEnd_time:
+                # 选定时间并显示
+                for ln in self.map_select_lines_Start:
+                    ln.set_xdata([self.SetTimeStart_time, self.SetTimeStart_time])
+                for ln in self.map_select_lines_End:
+                    ln.set_xdata([self.SetTimeEnd_time, self.SetTimeEnd_time])
         self.static_canvas.figure.canvas.draw()
 
     def mapClosed(self,info):
         self.map_widget.hide()
         for ln in self.mid_select_lines:
+            ln.set_visible(False)
+        for ln in self.map_select_lines_Start:
+            ln.set_visible(False)
+        for ln in self.map_select_lines_End:
             ln.set_visible(False)
         self.map_action.setChecked(False)
         self.openMap(False)
